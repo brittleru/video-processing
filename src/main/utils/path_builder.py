@@ -15,6 +15,8 @@ class Paths:
 
     PROCESSED_DIR: Final[str] = os.path.join(RESOURCES_DIR, "processed")
     BAD_APPLE_PROCESSED_DIR: Final[str] = os.path.join(PROCESSED_DIR, "bad-apple")
+    BAD_APPLE_FRAMES_DIR: Final[str] = os.path.join(BAD_APPLE_PROCESSED_DIR, "frames")
+    BAD_APPLE_TEXTURE_TRANSFER_DIR: Final[str] = os.path.join(BAD_APPLE_PROCESSED_DIR, "texture-transfer")
 
     TEXTURES_DIR: Final[str] = os.path.join(RESOURCES_DIR, "textures")
     RICE_PATH: Final[str] = os.path.join(TEXTURES_DIR, "rice.jpg")

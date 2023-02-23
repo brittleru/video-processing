@@ -9,19 +9,19 @@ from src.main.utils.progress import ProgressBar
 
 
 class FrameGenerator:
-
     @staticmethod
     def generate_frames(
             video: str,
             fps: float = None,
-            processed_path: str = Paths.BAD_APPLE_PROCESSED_DIR,
+            processed_path: str = Paths.BAD_APPLE_FRAMES_DIR,
             file_type: str = ".jpg"
     ) -> None:
         """
         Generate all the frames from a video with the number of frames per second. E.g., if you only want two frames
-        per second or 30. If you want to take all the frames from the video better use: @
+        per second or 30. If you want to take all the frames from the video better use
+        :ref: `FrameGenerator.generate_all_frames`.
 
-        :param video: Path to the wanted video video.
+        :param video: Path to the wanted video.
         :param fps: How many frames to take per second. (i.e., if you don't want to take all the frames). If the
                     parameter is None then it will be converted to the frames of the video.
         :param processed_path: Path to save the frames.
@@ -46,7 +46,7 @@ class FrameGenerator:
     @staticmethod
     def generate_all_frames(
             video: str,
-            processed_path: str = Paths.BAD_APPLE_PROCESSED_DIR,
+            processed_path: str = Paths.BAD_APPLE_FRAMES_DIR,
             file_type: str = ".jpg"
     ) -> None:
         video_capture = cv2.VideoCapture(video)
@@ -82,7 +82,7 @@ class FrameGenerator:
             video_path: str,
             second: float,
             count: int = 1,
-            processed_path: str = Paths.BAD_APPLE_PROCESSED_DIR,
+            processed_path: str = Paths.BAD_APPLE_FRAMES_DIR,
             file_type: str = ".jpg"
     ) -> bool:
         """
@@ -125,8 +125,8 @@ class FrameGenerator:
 
 if __name__ == '__main__':
     # FrameGenerator.generate_frames(
-    #     video=Paths.BAD_APPLE_VIDEO_PATH, fps=None, processed_path=Paths.BAD_APPLE_PROCESSED_DIR, file_type=".jpg"
+    #     video=Paths.BAD_APPLE_VIDEO_PATH, fps=None, processed_path=Paths.BAD_APPLE_FRAMES_DIR, file_type=".jpg"
     # )
     FrameGenerator.generate_all_frames(
-        video=Paths.BAD_APPLE_VIDEO_PATH, processed_path=Paths.BAD_APPLE_PROCESSED_DIR, file_type=".jpg"
+        video=Paths.BAD_APPLE_VIDEO_PATH, processed_path=Paths.BAD_APPLE_FRAMES_DIR, file_type=".jpg"
     )

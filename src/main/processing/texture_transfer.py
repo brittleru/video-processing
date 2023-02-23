@@ -1,9 +1,6 @@
 import os
-
 import cv2
 import numpy as np
-from skimage.feature import hog
-from sklearn.metrics import pairwise_distances_argmin
 
 from src.main.utils.path_builder import Paths
 
@@ -14,6 +11,17 @@ def texture_transfer_min_error(
         block_size: int = 4,
         overlap_width: int = 1
 ) -> np.ndarray:
+    """
+    Method to apply the texture transfer between two images.
+
+    :param source_image: The image from where to "steal" the texture
+    :param target_image: The image to apply texture to.
+    :param block_size: Size of the patches of the source image, to obtain the desired level of granularity in the
+                       texture transfer. For example if the blocks are too large then the texture transfer may be too
+                       coarse, if they are too small then the result may be too detailed.
+    :param overlap_width: The padding of the block size.
+    :return: The new image with the applied texture transfer.
+    """
     # Resize the source image to match the size of the target image
     source_image = cv2.resize(source_image, target_image.shape[:2][::-1])
 
@@ -96,9 +104,13 @@ def texture_transfer_min_error(
     return texture_transferred_image
 
 
+def apply_texture_on_frames():
+    ...
+
+
 if __name__ == '__main__':
     s_image = cv2.imread(Paths.RADISHES_PATH)
-    t_image = cv2.imread(os.path.join(Paths.BAD_APPLE_PROCESSED_DIR, "bad-apple_154.jpg"))
+    t_image = cv2.imread(os.path.join(Paths.BAD_APPLE_FRAMES_DIR, "bad-apple_154.jpg"))
     tt_image = texture_transfer_min_error(source_image=s_image, target_image=t_image, block_size=4, overlap_width=1)
     # Save the texture-transferred image
     cv2.imshow("result", tt_image)
