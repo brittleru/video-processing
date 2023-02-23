@@ -238,3 +238,4 @@ cython_debug/
 # data/pretrained
 # datasets
 # results
+resources/processed/
