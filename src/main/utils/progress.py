@@ -3,6 +3,7 @@ import sys
 from time import time
 
 from src.main.utils.logging import Color
+from src.main.utils.display import seconds_to_readable
 
 
 class ProgressBar:
@@ -17,7 +18,8 @@ class ProgressBar:
             display_iter_width: int = 3
     ) -> None:
         """
-        Outputs a progress bar in the terminal.
+        Outputs a progress bar in the terminal. It has the number of iterations that has been passed, the time took
+        per iteration and an average time computed as the median of the previous iterations.
 
         :param num_iterations: The number of your iterations.
         :param current_iteration: The number of the current iteration.
@@ -49,7 +51,8 @@ class ProgressBar:
             ProgressBar.__avg_times.append(iteration_time)
             avg_time = ProgressBar.__median(ProgressBar.__avg_times)
             bar_content += f" |{color} Time per iteration: {iteration_time:.4f}s{Color.RESET} | " \
-                           f"{color}Estimated time to finish: {avg_time * (num_iterations - current_iteration):.4f}s" \
+                           f"{color}Estimated time to finish: " \
+                           f"{seconds_to_readable(avg_time * (num_iterations - current_iteration))}" \
                            f"{Color.RESET}{finished_value}"
         else:
             bar_content += f"{finished_value}"

@@ -87,6 +87,10 @@ def generate_project_structure() -> None:
     create_dir_if_doesnt_exist(Paths.BAD_APPLE_PROCESSED_DIR)
     create_dir_if_doesnt_exist(Paths.BAD_APPLE_FRAMES_DIR)
     create_dir_if_doesnt_exist(Paths.BAD_APPLE_TEXTURE_TRANSFER_DIR)
+    create_dir_if_doesnt_exist(Paths.BAD_APPLE_RADISH_DIR)
+    create_dir_if_doesnt_exist(Paths.BAD_APPLE_RICE_DIR)
+    create_dir_if_doesnt_exist(Paths.BAD_APPLE_SPAGHETTI_DIR)
+    create_dir_if_doesnt_exist(Paths.BAD_APPLE_PROCESSED_VIDEO_DIR)
 
     create_dir_if_doesnt_exist(Paths.TEXTURES_DIR)
 
