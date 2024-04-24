@@ -46,12 +46,13 @@ def get_path_of_files(directory: str, file_type: str = ".jpg") -> list:
     return file_paths
 
 
-def purge_files_in_dir(path_to_dir: str) -> bool:
+def purge_files_in_dir(path_to_dir: str, file_type: str = ".jpg") -> bool:
     """
     This will delete all the files from a given directory, the condition is for the directory to exist and to have
     at least one file in the given directory.
 
     :param path_to_dir: The given directory to delete the files.
+    :param file_type: The type of file encoding format e.g., .mp4, .avi, .wmv, .jpg, .png etc.
     :return: A binary value that represents if the files were deleted or not.
     """
     dir_exists = os.path.exists(path_to_dir)
@@ -61,12 +62,12 @@ def purge_files_in_dir(path_to_dir: str) -> bool:
         if len(files) > 0:
             for f in files:
                 os.remove(f)
-            print(f"{Color.GREEN}Successfully deleted all contents in "
+            print(f"{Color.GREEN}Successfully deleted all '{file_type}' contents in "
                   f"{Color.BOLD}'{PurePath(path_to_dir).name}'{Color.RESET}{Color.GREEN} directory.{Color.RESET}")
             return True
         else:
             print(f"{Color.YELLOW}Directory {Color.BOLD}'{PurePath(path_to_dir).name}'{Color.RESET}{Color.YELLOW}"
-                  f" is empty.{Color.RESET}")
+                  f" is empty. Or has no {Color.BOLD}'{file_type}'{Color.RESET}{Color.YELLOW} files.{Color.RESET}")
             return False
 
     print(f"{Color.RED}Directory {Color.BOLD}'{PurePath(path_to_dir).name}'{Color.RESET}{Color.RED}"
@@ -77,8 +78,6 @@ def purge_files_in_dir(path_to_dir: str) -> bool:
 def generate_project_structure() -> None:
     """
     Method to create all the directories needed for the project, some files you need to add yourself.
-
-    :return: Void.
     """
     create_dir_if_doesnt_exist(Paths.RESOURCES_DIR)
     create_dir_if_doesnt_exist(Paths.AUDIO_DIR)
@@ -86,13 +85,11 @@ def generate_project_structure() -> None:
     create_dir_if_doesnt_exist(Paths.PROCESSED_DIR)
     create_dir_if_doesnt_exist(Paths.BAD_APPLE_PROCESSED_DIR)
     create_dir_if_doesnt_exist(Paths.BAD_APPLE_FRAMES_DIR)
+    create_dir_if_doesnt_exist(Paths.BAD_APPLE_MMD_FRAMES_DIR)
     create_dir_if_doesnt_exist(Paths.BAD_APPLE_TEXTURE_TRANSFER_DIR)
-    create_dir_if_doesnt_exist(Paths.BAD_APPLE_RADISH_DIR)
-    create_dir_if_doesnt_exist(Paths.BAD_APPLE_RICE_DIR)
-    create_dir_if_doesnt_exist(Paths.BAD_APPLE_SPAGHETTI_DIR)
     create_dir_if_doesnt_exist(Paths.BAD_APPLE_PROCESSED_VIDEO_DIR)
-
     create_dir_if_doesnt_exist(Paths.TEXTURES_DIR)
+    create_dir_if_doesnt_exist(Paths.LOGS_DIR)
 
 
 if __name__ == '__main__':
