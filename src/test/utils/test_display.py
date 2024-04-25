@@ -1,6 +1,5 @@
 import io
 import unittest
-from typing import Optional
 from unittest.mock import patch
 
 from src.main.utils.display import readable_time, seconds_to_readable

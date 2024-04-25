@@ -1,9 +1,8 @@
 import sys
-
 from time import time
 
-from src.main.utils.logging import Color
 from src.main.utils.display import seconds_to_readable
+from src.main.utils.logging import Color
 
 
 class ProgressBar:
@@ -49,7 +48,7 @@ class ProgressBar:
         if color is Color.BLUE:
             iteration_time = curr_time - prev_time
             ProgressBar.__avg_times.append(iteration_time)
-            avg_time = ProgressBar.__median(ProgressBar.__avg_times)
+            avg_time = ProgressBar.median(ProgressBar.__avg_times)
             bar_content += f" |{color} Time per iteration: {iteration_time:.4f}s{Color.RESET} | " \
                            f"{color}Estimated time to finish: " \
                            f"{seconds_to_readable(avg_time * (num_iterations - current_iteration))}" \
@@ -61,7 +60,7 @@ class ProgressBar:
         sys.stdout.flush()
 
     @staticmethod
-    def __median(arr: list):
+    def median(arr: list):
         """
         Method to compute the median from an array.
 

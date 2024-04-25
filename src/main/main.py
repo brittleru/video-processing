@@ -1,5 +1,5 @@
 from src.main.utils.files_manipulation import generate_project_structure
-from src.main.processing.extract_frames import FrameGenerator
+from src.main.video_toolbox.extract_frames import FrameGenerator
 from src.main.utils.path_builder import Paths
 
 
