@@ -1,213 +1,305 @@
 import os
+import concurrent.futures
+import math
+import logging
+from multiprocessing import cpu_count
+from time import time
+
 import cv2
 import numpy as np
-import concurrent.futures
-
-from time import time
+from numba import jit
 from tqdm import tqdm
-from multiprocessing import cpu_count
 
-from src.main.utils.logging import Color
-from src.main.utils.path_builder import Paths
+from src.main.processing.texture_synthesis import l2_norm, min_err_boundary_cut, unravel_index
+from src.main.utils.consts import QuiltingTypes
 from src.main.utils.display import readable_time
 from src.main.utils.files_manipulation import get_path_of_files
+from src.main.utils.logging import Color
+from src.main.utils.path_builder import Paths
 
 
-def texture_transfer_min_error(
-        source_image: np.ndarray,
-        target_image: np.ndarray,
-        block_size: int = 4,
-        overlap_width: int = 1
+logging.basicConfig(
+    filename="../../../logs/texture_transfer_multiprocessing2.log",
+    format='%(levelname)s - %(asctime)s - %(message)s',
+    # filemode='w',
+    encoding="utf-8"
+)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+
+@jit(nopython=True)
+def sample_correlation(
+        texture: np.ndarray,
+        gray_texture: np.ndarray,
+        block_size: int,
+        gray_target: np.ndarray,
+        vertical_coord: int,
+        horizontal_coord: int
 ) -> np.ndarray:
     """
-    Method to apply the texture transfer between two images.
+    Finds the patch in the original texture that matches the best with the sample centered at the target pixel with
+    respect with the correlation values.
 
-    :param source_image: The image from where to "steal" the texture
-    :param target_image: The image to apply texture to.
-    :param block_size: Size of the patches of the source image, to obtain the desired level of granularity in the
-                       texture transfer. For example if the blocks are too large then the texture transfer may be too
-                       coarse, if they are too small then the result may be too detailed.
-    :param overlap_width: The padding of the block size.
-    :return: The new image with the applied texture transfer.
+    :param texture: The texture where we take the sample from as a numpy array.
+    :param gray_texture: The image where each pixel value is the correlation value between a sample centered on that
+                         pixel and the samples around the target pixel.
+    :param block_size: The size of sample from the texture.
+    :param gray_target: The correlation values of the sample centered at the target pixel
+    :param vertical_coord: Row index of the target pixel
+    :param horizontal_coord: Column index of the target Pixel
+    :return: The sample from the texture image that corresponds to the best sample.
     """
-    source_h, source_w = source_image.shape[:2]
-    target_h, target_w = target_image.shape[:2]
-    if source_h > target_h or source_w > source_w:
-        interp = cv2.INTER_AREA
+    height_texture, width_texture, _ = texture.shape
+    errors = np.zeros((height_texture - block_size, width_texture - block_size))
+
+    gray_target_sample = gray_target[
+                         vertical_coord:vertical_coord + block_size, horizontal_coord:horizontal_coord + block_size
+                         ]
+    height_target, width_target = gray_target_sample.shape
+
+    for i in range(height_texture - block_size):
+        for j in range(width_texture - block_size):
+            gray_texture_sample = gray_texture[i:i + height_target, j:j + width_target]
+            e = gray_texture_sample - gray_target_sample
+            errors[i, j] = np.sum(e ** 2)
+
+    best_height, best_width = unravel_index(np.argmin(errors), errors.shape)
+    return texture[best_height:best_height + height_target, best_width:best_width + width_target]
+
+
+@jit(nopython=True)
+def sample_best_overlapping(
+        texture: np.ndarray, gray_texture: np.ndarray, block_size: int, overlap_width: int, gray_target: np.ndarray,
+        current_image: np.ndarray, vertical_coord: int, horizontal_coord: int, alpha: float = 0.1, level: int = 0
+) -> np.ndarray:
+    """
+    Finds the sample in the original image that best matches the patch centered in the target pixel in terms of both
+    correlation values and L2 norm errors, using the sample overlap and previously reconstructed samples from the
+    image.
+
+    :param texture: The texture where we take the sample from as a numpy array.
+    :param gray_texture: The image where each pixel value is the correlation value between a sample centered on that
+                         pixel and the samples around the target pixel.
+    :param block_size: The size of sample from the texture.
+    :param overlap_width: The overlapping region between samples.
+    :param gray_target: The correlation values of the sample centered at the target pixel
+    :param current_image: A numpy array representing the reconstructed image so far.
+    :param vertical_coord: Row index of the target pixel
+    :param horizontal_coord: Column index of the target Pixel
+    :param alpha: The overlap error relative to the correlation error.
+    :param level: The level of the image pyramid to handle the patch overlap.
+    :return: The sample from the image that corresponds to the best sample in the texture.
+    """
+    height_texture, width_texture, _ = texture.shape
+    errors = np.zeros((height_texture - block_size, width_texture - block_size))
+
+    gray_target_sample = gray_target[
+                         vertical_coord:vertical_coord + block_size,
+                         horizontal_coord:horizontal_coord + block_size
+                         ]
+    height_target, width_target = gray_target_sample.shape
+
+    for i in range(height_texture - block_size):
+        for j in range(width_texture - block_size):
+            patch = texture[i:i + height_target, j:j + width_target]
+            l2_norm_error = l2_norm(patch, block_size, overlap_width, current_image, vertical_coord, horizontal_coord)
+
+            gray_texture_sample = gray_texture[i:i + height_target, j:j + width_target]
+            gray_error = np.sum((gray_texture_sample - gray_target_sample) ** 2)
+
+            last_error = 0
+            if level > 0:
+                last_error = patch[overlap_width:, overlap_width:] - \
+                             current_image[
+                             vertical_coord + overlap_width:vertical_coord + block_size,
+                             horizontal_coord + overlap_width:horizontal_coord + block_size
+                             ]
+                last_error = np.sum(last_error ** 2)
+
+            errors[i, j] = alpha * (l2_norm_error + last_error) + (1 - alpha) * gray_error
+
+    best_height, best_width = unravel_index(np.argmin(errors), errors.shape)
+    return texture[best_height:best_height + height_target, best_width:best_width + width_target]
+
+
+@jit(nopython=True)
+def compute_transfer(
+        output: np.ndarray, texture: np.ndarray, gray_texture: np.ndarray, gray_target: np.ndarray,
+        num_sample_height: int, num_sample_width: int, block_size: int, overlap_width: int,
+        alpha: float, level: int, sample_type: str,
+):
+    for i in range(num_sample_height):
+        for j in range(num_sample_width):
+            vertical_coord = i * (block_size - overlap_width)
+            horizontal_coord = j * (block_size - overlap_width)
+            if i == 0 and j == 0 or sample_type == "sample_correlation":
+                sample = sample_correlation(
+                    texture, gray_texture, block_size, gray_target, vertical_coord, horizontal_coord
+                )
+            elif sample_type == "sample_overlap":
+                sample = sample_best_overlapping(
+                    texture, gray_texture, block_size, overlap_width, gray_target, output, vertical_coord,
+                    horizontal_coord
+                )
+            elif sample_type == "minimum_error":
+                sample = sample_best_overlapping(
+                    texture, gray_texture, block_size, overlap_width, gray_target,
+                    output, vertical_coord, horizontal_coord, alpha, level
+                )
+                sample = min_err_boundary_cut(output, sample, overlap_width, vertical_coord, horizontal_coord)
+            # else:
+            #     raise NotImplementedError(f"Quilting type: {sample_type} is not implemented yet...")
+
+            output[vertical_coord:vertical_coord + block_size, horizontal_coord:horizontal_coord + block_size] = sample
+
+    return output
+
+
+def transfer_texture(
+        texture: np.ndarray, target: np.ndarray, block_size: int, alpha: float = 0.1, level: int = 0,
+        prev_image: np.ndarray = None, sample_type: str = "minimum_error"
+) -> np.ndarray:
+    """
+    Apply texture transfer between a source (texture) and a target image. It creates an empty image as output,
+    if it's the first level of the transfer then it's initialized as zeros, otherwise it uses the previous image.
+
+    :param texture: The texture image that is wanted to be used as transfer (i.e., source).
+    :param target: The image where we want to apply the new texture.
+    :param block_size: The size of sample from the texture.
+    :param alpha: The overlap error relative to the correlation error.
+    :param level: The level of the image pyramid to handle the patch overlap.
+    :param prev_image: The last image from the result of the transfer, if not given then the output image is
+                       initialized with zeros.
+    :param sample_type: Which type of sampling you want, i.e., 'sample_correlation', 'sample_overlap' or 'minimum_error'
+    :return: The new image with the texture applied from source to target.
+    """
+    gray_texture = cv2.cvtColor(texture, cv2.COLOR_RGB2GRAY)
+    gray_target = cv2.cvtColor(target, cv2.COLOR_RGB2GRAY)
+    texture = texture[:, :, :3].astype(np.float64) / 255.0
+    target = target[:, :, :3].astype(np.float64) / 255.0
+    height_target, width_target, _ = target.shape
+    overlap_width = block_size // 6
+    num_sample_height = math.ceil((height_target - block_size) / (block_size - overlap_width)) + 1 or 1
+    num_sample_width = math.ceil((width_target - block_size) / (block_size - overlap_width)) + 1 or 1
+
+    if level == 0:
+        output = np.zeros_like(target)
     else:
-        interp = cv2.INTER_CUBIC
-    # Resize the source image to match the size of the target image
-    source_image = cv2.resize(source_image, target_image.shape[:2][::-1], interpolation=interp)
+        output = prev_image
 
-    # Compute the error surface between the source and target images
-    error_surface = np.sum(np.square(source_image.astype(np.float32) - target_image.astype(np.float32)), axis=2)
-
-    # Divide the error surface into overlapping blocks
-    num_blocks_x = int(np.ceil((source_image.shape[1] - overlap_width) / (block_size - overlap_width)))
-    num_blocks_y = int(np.ceil((source_image.shape[0] - overlap_width) / (block_size - overlap_width)))
-
-    texture_transferred_image = np.zeros_like(source_image)
-
-    for block_y in range(num_blocks_y):
-        for block_x in range(num_blocks_x):
-            # Compute the bounds of the current block
-            block_left = block_x * (block_size - overlap_width)
-            block_top = block_y * (block_size - overlap_width)
-            block_right = min(block_left + block_size, source_image.shape[1])
-            block_bottom = min(block_top + block_size, source_image.shape[0])
-
-            # Compute the minimum cost path through the error surface for the current block
-            error_block = error_surface[block_top:block_bottom, block_left:block_right]
-            min_cost_path = np.zeros_like(error_block, dtype=np.int32)
-            min_cost_path[0, 0] = error_block[0, 0]
-
-            for i in range(1, min_cost_path.shape[0]):
-                min_cost_path[i, 0] = min_cost_path[i - 1, 0] + error_block[i, 0]
-
-            for j in range(1, min_cost_path.shape[1]):
-                min_cost_path[0, j] = min_cost_path[0, j - 1] + error_block[0, j]
-
-            for i in range(1, min_cost_path.shape[0]):
-                for j in range(1, min_cost_path.shape[1]):
-                    min_cost_path[i, j] = error_block[i, j] + min(
-                        min_cost_path[i - 1, j], min_cost_path[i, j - 1], min_cost_path[i - 1, j - 1])
-
-            path_x = []
-            path_y = []
-            i = min_cost_path.shape[0] - 1
-            j = min_cost_path.shape[1] - 1
-
-            while i > 0 or j > 0:
-                path_x.append(j + block_left)
-                path_y.append(i + block_top)
-                if i == 0:
-                    j -= 1
-                elif j == 0:
-                    i -= 1
-                else:
-                    if min_cost_path[i - 1, j] <= min_cost_path[i, j - 1] and \
-                            min_cost_path[i - 1, j] <= min_cost_path[i - 1, j - 1]:
-                        i -= 1
-                    elif min_cost_path[i, j - 1] <= min_cost_path[i - 1, j] and \
-                            min_cost_path[i, j - 1] <= min_cost_path[i - 1, j - 1]:
-                        j -= 1
-                    else:
-                        i -= 1
-                        j -= 1
-            path_x.append(block_left)
-            path_y.append(block_top)
-
-            # Apply the texture transfer by blending
-            texture_block = source_image[block_top:block_bottom, block_left:block_right]
-            target_block = target_image[block_top:block_bottom, block_left:block_right]
-            blend_mask = np.zeros_like(error_block, dtype=np.float32)
-
-            for i in range(len(path_x)):
-                blend_mask[
-                    max(0, path_y[i] - overlap_width - block_top):
-                    min(block_bottom - block_top, path_y[i] + overlap_width - block_top),
-                    max(0, path_x[i] - overlap_width - block_left):
-                    min(block_right - block_left, path_x[i] + overlap_width - block_left)
-                ] = 1
-            blend_mask = cv2.GaussianBlur(blend_mask, (2 * overlap_width + 1, 2 * overlap_width + 1), 0)
-            blend_mask = np.clip(blend_mask, 0, 1)
-            texture_block = texture_block.astype(np.float32) * blend_mask[:, :, np.newaxis] + target_block.astype(
-                np.float32) * (1 - blend_mask[:, :, np.newaxis])
-            texture_transferred_image[block_top:block_bottom, block_left:block_right] = texture_block.astype(np.uint8)
-
-    return texture_transferred_image
-
-
-def process_frame(
-        _frame_path: str,
-        source_image: np.ndarray,
-        textured_frames_dir: str,
-        block_size: int = 4,
-        overlap_width: int = 1
-) -> str:
-    """
-    This method will take a frame, transform it into a numpy array and apply texture transfer on it then the processed
-    frame will be saved. It's a helper method for multiprocessing, since doing this work sequentially would take a lot
-    of time.
-
-    :param _frame_path: Full path of the frame to process.
-    :param source_image: Full path of the texture to apply
-    :param textured_frames_dir: Where to save the processed frame.
-    :param block_size: Size of the patches of the source image, to obtain the desired level of granularity in the
-                       texture transfer. For example if the blocks are too large then the texture transfer may be too
-                       coarse, if they are too small then the result may be too detailed.
-    :param overlap_width: The padding of the block size.
-    :return: The file name, needed for multiprocessing.
-    """
-    _frame_name = os.path.basename(_frame_path)
-    _frame = cv2.imread(_frame_path)
-    _frame = texture_transfer_min_error(
-        source_image=source_image, target_image=_frame, block_size=block_size, overlap_width=overlap_width
+    return compute_transfer(
+        output, texture, gray_texture, gray_target, num_sample_height,
+        num_sample_width, block_size, overlap_width, alpha, level, sample_type
     )
-    cv2.imwrite(os.path.join(textured_frames_dir, _frame_name), _frame)
-    return _frame_name
 
 
-def apply_texture_on_frames(
+def texture_transfer_pyramid(
+        texture: np.ndarray, target: np.ndarray, block_size: int,
+        num_iterations: int, sample_type: str = QuiltingTypes.MINIMUM_ERROR
+) -> np.ndarray:
+    """
+    Applies texture transfer by a given iteration, a higher number of iterations means a better texture transferred
+    image.
+
+    :param texture: The texture image that is wanted to be used as transfer (i.e., source).
+    :param target: The image where we want to apply the new texture.
+    :param block_size: The size of sample from the texture.
+    :param num_iterations: The number of iterations to apply texture transfer, in each iteration the last generated
+                           image is used to generate a better transfer.
+    :param sample_type: Which type of sampling you want, i.e., 'sample_correlation', 'sample_overlap' or 'minimum_error'
+    :return: The new image with the texture applied from source to target.
+    """
+    logger.info("Iteration 0...")
+    output = transfer_texture(texture, target, block_size, sample_type=sample_type)
+    for i in range(1, num_iterations):
+        logger.info(f"Iteration {i}...")
+        alpha = (0.8 * (i - 1) / (num_iterations - 1)) + 0.1
+        block_size = block_size * 2 ** i // 3 ** i
+        output = transfer_texture(
+            texture, target, block_size, alpha=alpha, level=i, prev_image=output, sample_type=sample_type
+        )
+
+    return (output * 255).astype(np.uint8)
+
+
+def run_texture_transfer(source_img_path, target_img_path, result_name, num_iterations: int = 2):
+    source = cv2.imread(source_img_path)
+    target = cv2.imread(target_img_path)
+
+    print(f"Applying texture transfer on {result_name}...")
+    start_time = time()
+    result = texture_transfer_pyramid(source, target, 20, num_iterations)
+    end_time = time()
+    readable_time(start_time, end_time)
+
+    cv2.imshow('Result', result)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    cv2.imwrite(result_name, result)
+
+
+def run_texture_transfer_multiprocessing(
+        source_img_path: str, target_img_path: str, result_name: str, save_path: str, num_iterations: int = 2
+) -> str:
+    logger.info(f"Applying texture transfer on {result_name}")
+    source = cv2.imread(source_img_path)
+    target = cv2.imread(target_img_path)
+    result = texture_transfer_pyramid(source, target, 20, num_iterations)
+    cv2.imwrite(os.path.join(save_path, result_name), result)
+    logger.info(f"Saving {result_name} to {save_path}")
+
+    return result_name
+
+
+def run_texture_transfer_batch_multiprocessing(
         frames_dir: str,
-        textured_frames_dir: str,
-        source_texture_path: str,
-        block_size: int = 4,
-        overlap_width: int = 1,
-        file_type: str = ".jpg"
-) -> None:
-    """
-    This method applies texture transfer on all the given frames with multiprocessing, on the number of the cores
-    of you machine CPU minus 2 (so you can use your machine while the files are processed).
-
-    :param frames_dir: The full path to the directory that has the frames to process.
-    :param textured_frames_dir: The full path to the directory to save the processed frames.
-    :param source_texture_path: The full path to the texture image to apply.
-    :param block_size: Size of the patches of the source image, to obtain the desired level of granularity in the
-                       texture transfer. For example if the blocks are too large then the texture transfer may be too
-                       coarse, if they are too small then the result may be too detailed.
-    :param overlap_width: The padding of the block size.
-    :param file_type: It can be .jpg, .png, .jpeg, etc.
-    :return: Void.
-    """
-    frames_paths = get_path_of_files(directory=frames_dir, file_type=file_type)
-    source_image = cv2.imread(source_texture_path)
-    frames_paths_size = len(frames_paths)
-
-    print(f"{Color.BOLD}Texture transferring frames...{Color.RESET}")
-    print(f"Total of {Color.BOLD}({frames_paths_size}){Color.RESET} frames.")
-
+        source_img_path: str = Paths.RICE_PATH,
+        save_path: str = Paths.BAD_APPLE_PROCESSED_DIR,
+        num_iterations: int = 2,
+        file_type: str = ".jpg",
+        where_to_slice_paths_arr: int = 0
+):
+    target_paths = get_path_of_files(directory=frames_dir, file_type=file_type)[where_to_slice_paths_arr:]
+    target_paths_size = len(target_paths)
+    logger.info(f"Starting to process {target_paths_size} frames.")
+    logger.info(f"Applying {os.path.basename(source_img_path)} texture.")
     start_time = time()
     with concurrent.futures.ProcessPoolExecutor(cpu_count() - 2) as executor:
-        with tqdm(total=frames_paths_size) as progress_bar:
+        with tqdm(total=target_paths_size) as progress_bar:
             futures = {}
-            for index, frame_path in enumerate(frames_paths):
+            for index, frame_path in enumerate(target_paths):
                 future = executor.submit(
-                    process_frame, frame_path, source_image, textured_frames_dir, block_size, overlap_width
+                    run_texture_transfer_multiprocessing,
+                    source_img_path, frame_path, os.path.basename(frame_path), save_path, num_iterations
                 )
                 futures[future] = index
-            results = [None] * frames_paths_size
+            results = [None] * target_paths_size
             for future in concurrent.futures.as_completed(futures):
                 index = futures[future]
+                logger.info(f"Process number {index} done")
                 results[index] = future.result()
                 progress_bar.update(1)
         res = [result for result in results]
 
     end_time = time()
+    logger.info(f"Finished ({len(res)}) frames. {readable_time(start_time, end_time, False, False)}")
     print(f"Finished ({Color.BOLD}{len(res)}{Color.RESET}) frames. {readable_time(start_time, end_time)}")
 
 
 if __name__ == '__main__':
-    s_image = cv2.imread(Paths.RICE_PATH)
-    t_image = cv2.imread(os.path.join(Paths.BAD_APPLE_FRAMES_DIR, "bad-apple_154.jpg"))
-    tt_image = texture_transfer_min_error(source_image=s_image, target_image=t_image, block_size=4, overlap_width=2)
-    # Save the texture-transferred image
-    cv2.imshow("result", tt_image)
-    cv2.waitKey(0)
-    cv2.imwrite("texture_transferred_image.jpg", tt_image)
-    apply_texture_on_frames(
-        Paths.BAD_APPLE_FRAMES_DIR, Paths.BAD_APPLE_RADISH_DIR, Paths.RADISHES_PATH,
-        block_size=4,
-        overlap_width=1
+
+    run_texture_transfer(
+        Paths.RICE_PATH, os.path.join(Paths.BAD_APPLE_MMD_FRAMES_DIR, "bad_apple_mmd_model_1.jpg"),
+        "ba-mmd-1.png",
+        num_iterations=2
     )
 
+    # # TODO: run this for a smaller number of frames, processed 1183 frames (including the 0th frame)
+    # run_texture_transfer_batch_multiprocessing(
+    #     frames_dir=Paths.BAD_APPLE_MMD_FRAMES_DIR,
+    #     source_img_path=Paths.RICE_PATH,
+    #     save_path=Paths.BAD_APPLE_RICE_DIR,
+    #     num_iterations=2,
+    #     where_to_slice_paths_arr=5807
+    # )
