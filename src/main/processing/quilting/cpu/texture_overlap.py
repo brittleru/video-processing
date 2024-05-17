@@ -243,7 +243,7 @@ if __name__ == '__main__':
     textured = TextureOverlapping(
         source_image=s_image, target_size=t_image.shape[:2][::-1], block_size=4, overlap_width=1
     )
-    tt_image_name = textured.process_frame(_frame_path=Paths.EMINESCU_PATH, save_dir="./", is_visualized=False)
+    tt_image_name = textured.process_frame(_frame_path=Paths.EMINESCU_PATH, save_dir="../../", is_visualized=False)
 
     textured.apply_texture_on_frames(
         frames_dir=Paths.BAD_APPLE_FRAMES_DIR,

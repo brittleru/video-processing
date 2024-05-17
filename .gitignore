@@ -239,3 +239,4 @@ cython_debug/
 # datasets
 # results
 resources/processed/
+!resources/processed/bad-apple/video/*

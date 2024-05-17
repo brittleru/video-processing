@@ -10,7 +10,7 @@ import numpy as np
 from numba import jit
 from tqdm import tqdm
 
-from src.main.processing.texture_synthesis import l2_norm, min_err_boundary_cut, unravel_index
+from src.main.processing.quilting.cpu.texture_synthesis import l2_norm, min_err_boundary_cut, unravel_index
 from src.main.utils.consts import QuiltingTypes
 from src.main.utils.display import readable_time
 from src.main.utils.files_manipulation import get_path_of_files
@@ -19,7 +19,7 @@ from src.main.utils.path_builder import Paths
 
 
 logging.basicConfig(
-    filename="../../../logs/texture_transfer_multiprocessing2.log",
+    filename="../../../../../logs/texture_transfer_multiprocessing2.log",
     format='%(levelname)s - %(asctime)s - %(message)s',
     # filemode='w',
     encoding="utf-8"
