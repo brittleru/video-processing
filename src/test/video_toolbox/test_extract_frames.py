@@ -55,7 +55,7 @@ class TestFrameGenerator(unittest.TestCase):
 
         for video_dim, resize_dim, expected_inter in test_cases:
             with self.subTest(video_dim=video_dim, resize_dim=resize_dim, expected_inter=expected_inter):
-                actual_inter = FrameGenerator._FrameGenerator__get_inter_based_on_resize(video_dim, resize_dim)
+                actual_inter = FrameGenerator.get_inter_based_on_resize(video_dim, resize_dim)
                 self.assertEqual(actual_inter, expected_inter)
 
     def test_generate_frames(self):

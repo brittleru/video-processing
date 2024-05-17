@@ -32,7 +32,7 @@ class FrameGenerator:
         video_length_digits_len = len(str(video_length))
         video_name = os.path.splitext(os.path.basename(video))[0]
         video_dim = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH)), int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        interpolation = FrameGenerator.__get_inter_based_on_resize(video_dim, resize_dim)
+        interpolation = FrameGenerator.get_inter_based_on_resize(video_dim, resize_dim)
 
         print(f"{Color.BOLD}Processing video frames...{Color.RESET}")
         print(f"Video has {Color.BOLD}{video_length}{Color.RESET} total frames.")
@@ -60,7 +60,7 @@ class FrameGenerator:
         cv2.destroyAllWindows()
 
     @staticmethod
-    def __get_inter_based_on_resize(video_dim: Tuple[int, int], resize_dim: Tuple[int, int] | None) -> int | None:
+    def get_inter_based_on_resize(video_dim: Tuple[int, int], resize_dim: Tuple[int, int] | None) -> int | None:
         """
         Will infer the interpolation needed for the resize based on what size the video has.
 
