@@ -1,7 +1,7 @@
-import os
 import concurrent.futures
-import math
 import logging
+import math
+import os
 from multiprocessing import cpu_count
 from time import time
 
@@ -10,13 +10,13 @@ import numpy as np
 from numba import jit
 from tqdm import tqdm
 
-from src.main.processing.quilting.cpu.texture_synthesis import l2_norm, min_err_boundary_cut, unravel_index
+from src.main.processing.quilting.cpu.texture_synthesis import min_err_boundary_cut
+from src.main.processing.quilting.cpu.utils import l2_norm, unravel_index
 from src.main.utils.consts import QuiltingTypes
 from src.main.utils.display import readable_time
 from src.main.utils.files_manipulation import get_path_of_files
 from src.main.utils.logging import Color
 from src.main.utils.path_builder import Paths
-
 
 logging.basicConfig(
     filename="../../../../../logs/texture_transfer_multiprocessing2.log",
@@ -288,7 +288,6 @@ def run_texture_transfer_batch_multiprocessing(
 
 
 if __name__ == '__main__':
-
     run_texture_transfer(
         Paths.RICE_PATH, os.path.join(Paths.BAD_APPLE_MMD_FRAMES_DIR, "bad_apple_mmd_model_1.jpg"),
         "ba-mmd-1.png",

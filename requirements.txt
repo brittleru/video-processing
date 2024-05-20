@@ -7,3 +7,5 @@ notebook
 torch
 torchvision
 torchaudio
+matplotlib
+torchinfo
